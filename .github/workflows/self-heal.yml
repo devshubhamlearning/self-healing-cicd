@@ -1,3 +1,6 @@
+on:
+  workflow_dispatch:
+
 name: Self-Heal Pipeline
 
 on:
