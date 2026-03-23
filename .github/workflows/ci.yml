@@ -39,7 +39,7 @@ jobs:
 
     - name: Upload failure logs
       if: steps.run_tests.outcome == 'failure'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-failure-logs
         path: test_logs.txt
