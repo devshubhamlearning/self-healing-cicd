@@ -7,6 +7,10 @@ on:
         description: 'Failed run ID to analyze'
         required: true
 
+permissions:
+  actions: write
+  contents: write
+
 jobs:
   self-heal:
     runs-on: ubuntu-latest
@@ -38,16 +42,16 @@ jobs:
         if [ -f test_logs.txt ]; then
           python3 scripts/analyze_failure.py test_logs.txt
         else
-          echo "No logs found, using default analysis"
+          echo "No logs found, applying default fix"
         fi
 
-    - name: Apply fix & retry tests
+    - name: Apply fix and retry
       run: |
-        # Fix the divide by zero test
         cat > tests/test_main.py << 'TESTEOF'
+import sys
+import os
+sys.path.insert(0, "/app")
 from fastapi.testclient import TestClient
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 from main import app
 
 client = TestClient(app)
@@ -70,10 +74,10 @@ def test_divide_by_zero():
     assert response.status_code == 500
 TESTEOF
 
-        # Rebuild and retest
         docker build -t self-healing-app:latest -f app/Dockerfile .
         docker run --rm \
-          -v ${{ github.workspace }}/tests:/app/tests \
+          -v $GITHUB_WORKSPACE/tests:/app/tests \
+          -e PYTHONPATH=/app \
           self-healing-app:latest \
           sh -c "pip install pytest httpx -q && pytest tests/ -v"
 
