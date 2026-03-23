@@ -1,0 +1,65 @@
+name: Self-Healing CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    outputs:
+      test_status: ${{ steps.run_tests.outcome }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build Docker image
+      run: docker build -t self-healing-app:latest -f app/Dockerfile .
+
+    - name: Run tests in Docker
+      id: run_tests
+      run: |
+        docker run --rm \
+          -v ${{ github.workspace }}/tests:/app/tests \
+          self-healing-app:latest \
+          sh -c "pip install pytest httpx -q && pytest tests/ -v --tb=short 2>&1 | tee /tmp/test_output.txt; exit \${PIPESTATUS[0]}"
+      continue-on-error: true
+
+    - name: Save test logs
+      if: steps.run_tests.outcome == 'failure'
+      run: |
+        docker run --rm \
+          -v ${{ github.workspace }}/tests:/app/tests \
+          self-healing-app:latest \
+          sh -c "pip install pytest httpx -q && pytest tests/ -v --tb=short 2>&1" > test_logs.txt || true
+        cat test_logs.txt
+
+    - name: Upload failure logs
+      if: steps.run_tests.outcome == 'failure'
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-failure-logs
+        path: test_logs.txt
+
+    - name: Trigger self-heal if failed
+      if: steps.run_tests.outcome == 'failure'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'self-heal.yml',
+            ref: 'main',
+            inputs: {
+              run_id: context.runId.toString()
+            }
+          })
+          console.log('Self-heal workflow triggered!')
+
+    - name: Pass if tests succeeded
+      if: steps.run_tests.outcome == 'success'
+      run: echo "✅ All tests passed!"

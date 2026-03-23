@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=production
+
+  test:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    command: >
+      sh -c "pip install pytest httpx &&
+             pytest tests/ -v --tb=short 2>&1"
+    volumes:
+      - ./tests:/app/tests
+    depends_on:
+      - app
