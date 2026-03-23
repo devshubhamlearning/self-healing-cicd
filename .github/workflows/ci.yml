@@ -6,11 +6,13 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    outputs:
-      test_status: ${{ steps.run_tests.outcome }}
 
     steps:
     - name: Checkout code
@@ -23,31 +25,25 @@ jobs:
       id: run_tests
       run: |
         docker run --rm \
-          -v ${{ github.workspace }}/tests:/app/tests \
+          -v $GITHUB_WORKSPACE/tests:/app/tests \
+          -e PYTHONPATH=/app \
           self-healing-app:latest \
-          sh -c "pip install pytest httpx -q && pytest tests/ -v --tb=short 2>&1 | tee /tmp/test_output.txt; exit \${PIPESTATUS[0]}"
-      continue-on-error: true
-
-    - name: Save test logs
-      if: steps.run_tests.outcome == 'failure'
-      run: |
-        docker run --rm \
-          -v ${{ github.workspace }}/tests:/app/tests \
-          self-healing-app:latest \
-          sh -c "pip install pytest httpx -q && pytest tests/ -v --tb=short 2>&1" > test_logs.txt || true
+          sh -c "pip install pytest httpx -q && pytest tests/ -v --tb=short 2>&1" \
+          > test_logs.txt 2>&1 || echo "TESTS_FAILED=true" >> $GITHUB_ENV
         cat test_logs.txt
 
     - name: Upload failure logs
-      if: steps.run_tests.outcome == 'failure'
+      if: env.TESTS_FAILED == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: test-failure-logs
         path: test_logs.txt
 
     - name: Trigger self-heal if failed
-      if: steps.run_tests.outcome == 'failure'
+      if: env.TESTS_FAILED == 'true'
       uses: actions/github-script@v6
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           await github.rest.actions.createWorkflowDispatch({
             owner: context.repo.owner,
@@ -61,5 +57,5 @@ jobs:
           console.log('Self-heal workflow triggered!')
 
     - name: Pass if tests succeeded
-      if: steps.run_tests.outcome == 'success'
+      if: env.TESTS_FAILED != 'true'
       run: echo "✅ All tests passed!"
